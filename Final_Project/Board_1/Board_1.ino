@@ -16,6 +16,7 @@
 #define SPEAKER 6
 #define SERVOR_PIN 5
 #define WINDOW_SENSOR 4
+#define RESET_PIN 3
 #define SENSOR A0
 
 Adafruit_NeoPixel pixels(NUMPIXELS, PIN, NEO_GRB + NEO_KHZ800);
@@ -38,6 +39,14 @@ int mode_wash = 1;
 int level_water = 2;
 // ==============================
 
+// ======= Cảm biến nước ========
+const int water_level_1 = 300;
+const int water_level_2 = 600;
+const int water_level_3 = 900;
+const int water_level_drain = 50;
+int water_sensor = 0;
+// ==============================
+
 // ========= Trạng thái =========
 // 0 : Đang chờ
 // 1 : Đang cấp nước
@@ -47,6 +56,7 @@ int level_water = 2;
 // 5 : Đang xả nước
 // 6 : Đang vắt
 // 7 : Hoàn thành
+// 8 : Dừng
 int status = 0;
 // ==============================
 
@@ -55,8 +65,6 @@ int status = 0;
 // 1 : Tạm dừng
 int pause = 0;
 // ==============================
-
-
 
 int pos = 0;
 
@@ -76,6 +84,11 @@ void setup()
   pinMode(SPEAKER, OUTPUT);
   pinMode(WINDOW_SENSOR, INPUT);
   pinMode(SENSOR, INPUT);
+
+  digitalWrite(RESET_PIN, HIGH);
+  delay(200);
+  pinMode(RESET_PIN, OUTPUT);  
+
   myservo.attach(SERVOR_PIN);
 }
 
@@ -100,19 +113,12 @@ void loop()
   // Start / Stop
   if (command == "C")
   {
-    if (status == 0)
+    if (status == 0 || status == 7)
     {
       Serial.println("Start washing");
       lcd_1.clear();
       lcd_1.print("Bat dau giat");
       StartWashing();
-    }
-    else
-    {
-      status = 0;
-      Serial.println("Stop washing");
-      lcd_1.clear();
-      lcd_1.print("Dung giat");
     }
     ClearCommand();
   }
@@ -125,18 +131,17 @@ void loop()
       pause = 1;
       Serial.println("Pause washing");
       lcd_1.clear();
-      lcd_1.print("Tạm dừng");
+      lcd_1.print("Tam dung");
     }
     else
     {
       pause = 0;
       Serial.println("Resume washing");
       lcd_1.clear();
-      lcd_1.print("Tiếp tục");
+      lcd_1.print("Tiep tuc");
     }
     ClearCommand();
   }
-
 }
 
 void StartWashing()
@@ -162,7 +167,28 @@ void StartWashing()
   // hoàn thành
   Serial.println("Hoan thanh");
   Complete();
+}
 
+void PauseWashing()
+{
+  pause = 1;
+}
+
+void ResumeWashing()
+{
+  pause = 0;
+}
+
+void StopWashing()
+{
+  status = 8;
+  Serial.println("Stop washing");
+  lcd_1.clear();
+  lcd_1.print("Dung");
+  pixels.clear();
+  pixels.show();
+  delay(500);
+  digitalWrite(RESET_PIN, LOW);
 }
 
 void WaterSupply()
@@ -170,7 +196,14 @@ void WaterSupply()
   status = 1;
   lcd_1.clear();
   lcd_1.print("Dang bom nuoc");
-  delay(1000);
+  int water_level = level_water == 1 ? water_level_1 : (level_water == 2 ? water_level_2 : water_level_3);
+  while (water_sensor < water_level)
+  {
+    LedWaterIn(water_level);
+  }
+  lcd_1.clear();
+  lcd_1.print("Bom nuoc xong");
+  delay(500);
 }
 
 void Wash()
@@ -182,8 +215,11 @@ void Wash()
     lcd_1.clear();
     lcd_1.print("Dang giat");
     lcd_1.setCursor(0, 1);
-    lcd_1.print("Lan " + String(status-1));
-    delay(1000);
+    lcd_1.print("Lan " + String(status - 1));
+    for (int i = 0; i < 3; i++)
+    {
+      ServoRun(3);
+    }
   }
 }
 
@@ -192,14 +228,23 @@ void WaterDrain()
   status = 5;
   lcd_1.clear();
   lcd_1.print("Dang xa nuoc");
-  delay(1000);
+  while (water_sensor > water_level_drain)
+  {
+    LedWaterOut();
+  }
 }
 
-void Squeeze(){
+void Squeeze()
+{
   status = 6;
   lcd_1.clear();
   lcd_1.print("Dang vat");
-  delay(1000);
+  for (int i = 0; i < 5; i++)
+  {
+    ServoRun(2);
+  }
+  lcd_1.clear();
+  lcd_1.print("Vat xong");
 }
 
 void Complete()
@@ -255,13 +300,15 @@ void SelectWater()
     lcd_1.clear();
     lcd_1.print("Select Water: ");
     lcd_1.setCursor(0, 1);
-    lcd_1.print(level_water == 1 ? "Nuoc cao" : level_water == 2 ? "Nuoc trung binh" : "Nuoc thap");
+    lcd_1.print(level_water == 1 ? "Nuoc cao" : level_water == 2 ? "Nuoc trung binh"
+                                                                 : "Nuoc thap");
     Sleep(100);
   }
   lcd_1.clear();
   lcd_1.print("Selected Water: ");
   lcd_1.setCursor(0, 1);
-  lcd_1.print(level_water == 1 ? "Nuoc cao" : level_water == 2 ? "Nuoc trung binh" : "Nuoc thap");
+  lcd_1.print(level_water == 1 ? "Nuoc cao" : level_water == 2 ? "Nuoc trung binh"
+                                                               : "Nuoc thap");
 }
 
 void Sleep(int s)
@@ -270,6 +317,10 @@ void Sleep(int s)
   {
     delay(1);
     ReadInput();
+    if (status == 1 || status == 5)
+    {
+      ReadSensor();
+    }
   }
 }
 
@@ -281,17 +332,27 @@ void ReadInput()
     command.trim();
     Serial.println(command);
     Beep();
+    if (command == "A" && !(status == 0 || status == 7))
+    {
+      StopWashing();
+    }
   }
 }
 
-void LedWaterIn()
+void ReadSensor()
+{
+  water_sensor = analogRead(SENSOR);
+}
+
+void LedWaterIn(int water_level)
 {
   pixels.clear();
-  for (int i = 0; i < NUMPIXELS; i++)
+  for (int i = 0; (i < NUMPIXELS && water_sensor < water_level); i++)
   {
+    Serial.println("Water: " + String(water_sensor));
     pixels.setPixelColor(i, pixels.Color(0, 150, 0));
     pixels.show();
-    Sleep(200);
+    Sleep(100);
   }
   pixels.clear();
   pixels.show();
@@ -300,11 +361,12 @@ void LedWaterIn()
 void LedWaterOut()
 {
   pixels.clear();
-  for (int i = 0; i < NUMPIXELS; i++)
+  for (int i = 0; (i < NUMPIXELS && water_sensor > water_level_drain); i++)
   {
+    Serial.println("Water: " + String(water_sensor));
     pixels.setPixelColor(i, pixels.Color(0, 255, 255));
     pixels.show();
-    Sleep(200);
+    Sleep(100);
   }
   pixels.clear();
   pixels.show();
