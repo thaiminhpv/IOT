@@ -22,7 +22,9 @@
 Adafruit_NeoPixel pixels(NUMPIXELS, PIN, NEO_GRB + NEO_KHZ800);
 Servo myservo;
 
+// ====== Lệnh điều khiển =======
 String command = "";
+// ==============================
 
 // ======== Chế độ giặt =========
 // 1 : Giặt mạnh
@@ -31,12 +33,31 @@ String command = "";
 int mode_wash = 1;
 // ==============================
 
-// ======== Chế mức nước =========
+// ======== Mức nước =========
 // 1 : Nước cao
 // 2 : Nước trung bình
 // 3 : Nước thấp
 // default : Nước trung bình
 int level_water = 2;
+// ==============================
+
+// ======== Tốc độ giặt =========
+// Tốc độ giặt sẽ được tính theo chế độ giặt và mức nước
+// default : 3
+// công thức : tốc độ giặt = ((mức nước + 1) * (chế độ giặt + 1) / 4) + 5
+int speed_wash = 9;
+// ==============================
+
+// ======== Tốc độ vắt ==========
+// default : 5
+int speed_spin = 5;
+// ==============================
+
+// ======== Thời gian giặt =========
+// Thời gian giặt sẽ được tính theo chế độ giặt và mức nước
+// default : 5
+// công thức : thời gian giặt = (mức nước + tốc độ giặt)
+int time_wash = 5;
 // ==============================
 
 // ======= Cảm biến nước ========
@@ -60,13 +81,21 @@ int water_sensor = 0;
 int status = 0;
 // ==============================
 
+// ======= Window sensor ========
+// true : cửa đang mở
+// false : cửa đang đóng
+bool window_open = true;
+// ==============================
+
 // ========== Tạm dừng ==========
 // 0 : Không
 // 1 : Tạm dừng
 int pause = 0;
 // ==============================
 
+// ========== Servo Pos =========
 int pos = 0;
+// ==============================
 
 LiquidCrystal lcd_1(LCD_R5, LCD_E, LCD_DB4, LCD_DB5, LCD_DB6, LCD_DB7);
 
@@ -82,12 +111,12 @@ void setup()
   pixels.begin();
 
   pinMode(SPEAKER, OUTPUT);
-  pinMode(WINDOW_SENSOR, INPUT);
+  pinMode(WINDOW_SENSOR, INPUT_PULLUP);
   pinMode(SENSOR, INPUT);
 
   digitalWrite(RESET_PIN, HIGH);
   delay(200);
-  pinMode(RESET_PIN, OUTPUT);  
+  pinMode(RESET_PIN, OUTPUT);
 
   myservo.attach(SERVOR_PIN);
 }
@@ -110,7 +139,7 @@ void loop()
     ClearCommand();
   }
 
-  // Start / Stop
+  // Start
   if (command == "C")
   {
     if (status == 0 || status == 7)
@@ -122,31 +151,18 @@ void loop()
     }
     ClearCommand();
   }
-
-  // Pause / Resume
-  if (command == "D")
-  {
-    if (pause == 0)
-    {
-      pause = 1;
-      Serial.println("Pause washing");
-      lcd_1.clear();
-      lcd_1.print("Tam dung");
-    }
-    else
-    {
-      pause = 0;
-      Serial.println("Resume washing");
-      lcd_1.clear();
-      lcd_1.print("Tiep tuc");
-    }
-    ClearCommand();
-  }
 }
 
 void StartWashing()
 {
+  // Tính tốc độ giặt
+  speed_wash = ((level_water + 1) * (mode_wash + 1) / 4) + 5;
+  // Tính thời gian giặt
+  time_wash = (level_water + speed_wash);
+
   Serial.println("Start washing");
+  Serial.println("Speed : " + String(speed_wash));
+  Serial.println("Time : " + String(time_wash));
 
   // bơm nước
   Serial.println("Bom nuoc");
@@ -167,16 +183,6 @@ void StartWashing()
   // hoàn thành
   Serial.println("Hoan thanh");
   Complete();
-}
-
-void PauseWashing()
-{
-  pause = 1;
-}
-
-void ResumeWashing()
-{
-  pause = 0;
 }
 
 void StopWashing()
@@ -216,9 +222,9 @@ void Wash()
     lcd_1.print("Dang giat");
     lcd_1.setCursor(0, 1);
     lcd_1.print("Lan " + String(status - 1));
-    for (int i = 0; i < 3; i++)
+    for (int i = 0; i < time_wash; i++)
     {
-      ServoRun(3);
+      ServoRun(speed_wash);
     }
   }
 }
@@ -241,7 +247,7 @@ void Squeeze()
   lcd_1.print("Dang vat");
   for (int i = 0; i < 5; i++)
   {
-    ServoRun(2);
+    ServoRun(speed_spin);
   }
   lcd_1.clear();
   lcd_1.print("Vat xong");
@@ -252,7 +258,7 @@ void Complete()
   status = 7;
   lcd_1.clear();
   lcd_1.print("Hoan thanh");
-  delay(1000);
+  Alarm(5);
 }
 
 void SelectMode()
@@ -321,6 +327,10 @@ void Sleep(int s)
     {
       ReadSensor();
     }
+    if (window_open && IsWashing())
+    {
+      WaringWindowIsOpen();
+    }
   }
 }
 
@@ -332,11 +342,85 @@ void ReadInput()
     command.trim();
     Serial.println(command);
     Beep();
-    if (command == "A" && !(status == 0 || status == 7))
+    if (command == "A" && IsWashing())
     {
+      ClearCommand();
       StopWashing();
     }
+
+    if (command == "D" && IsWashing())
+    {
+      ClearCommand();
+      if (pause == 0)
+      {
+        PauseWashing();
+      }
+      else
+      {
+        ResumeWashing();
+      }
+    }
   }
+
+  // Read WINDOW_SENSOR
+  if (digitalRead(WINDOW_SENSOR) == LOW)
+  {
+    while (digitalRead(WINDOW_SENSOR) == LOW)
+    {
+      delay(1);
+    }
+    window_open = !window_open;
+    Serial.println("Window : " + String(window_open));
+  }
+}
+
+void WaringWindowIsOpen()
+{
+  lcd_1.clear();
+  lcd_1.print("Cua dang mo");
+  lcd_1.setCursor(0, 1);
+  lcd_1.print("Hay dong cua");
+  while (window_open)
+  {
+    ReadInput();
+  }
+  lcd_1.clear();
+  lcd_1.print("Cua da dong");
+  lcd_1.setCursor(0, 1);
+  PrintCurrentStatus();
+}
+
+void PauseWashing()
+{
+  pause = 1;
+  Serial.println("Pause washing");
+  lcd_1.clear();
+  lcd_1.print("Tam dung");
+  while (pause == 1)
+  {
+    ReadInput();
+  }
+}
+
+void ResumeWashing()
+{
+  pause = 0;
+  Serial.println("Resume washing");
+  lcd_1.clear();
+  lcd_1.print("Tiep tuc");
+  lcd_1.setCursor(0, 1);
+  PrintCurrentStatus();
+}
+
+void PrintCurrentStatus()
+{
+  lcd_1.print(status == 1 ? "Bom nuoc" : status == 2 ? "Giat lan 1"
+                                     : status == 3   ? "Giat lan 2"
+                                     : status == 4   ? "Giat lan 3"
+                                     : status == 5   ? "Xa nuoc"
+                                     : status == 6   ? "Vat"
+                                     : status == 7   ? "Hoan thanh"
+                                                     : "Dung");
 }
 
 void ReadSensor()
@@ -401,6 +485,11 @@ void ServoRun(int speed)
     myservo.write(pos);
     Sleep(speed);
   }
+}
+
+bool IsWashing()
+{
+  return !(status == 0 || status == 7);
 }
 
 void ClearCommand()
