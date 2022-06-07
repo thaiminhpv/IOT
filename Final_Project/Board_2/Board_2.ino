@@ -24,7 +24,7 @@ void loop()
 {
     ifButtonPressed([](char charPressed) {
         // This will be sent to the serial monitor and Board_1
-        Serial.print(charPressed);
+        Serial.println(charPressed);
     });
 }
 
