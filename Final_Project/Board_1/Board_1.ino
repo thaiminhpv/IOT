@@ -103,7 +103,7 @@ void setup()
 {
   Serial.begin(9600);
   lcd_1.begin(16, 2);
-  lcd_1.print("hello world!");
+  lcd_1.print("May Giat");
 
 #if defined(__AVR_ATtiny85__) && (F_CPU == 16000000)
   clock_prescale_set(clock_div_1);
@@ -334,32 +334,25 @@ void Sleep(int s)
   }
 }
 
-void ReadInput()
-{
-  if (Serial.available())
-  {
-    command = Serial.readStringUntil('\r\n');
-    command.trim();
+void ReadInput() {
+  if (Serial.available()) {
+    command = Serial.readStringUntil('\r\n').trim();
     Serial.println(command);
     Beep();
-    if (command == "A" && IsWashing())
-    {
-      ClearCommand();
-      StopWashing();
+    if (IsWashing()) {
+      if (command == "A"){
+        ClearCommand();
+        StopWashing();
+      } else if (command == "D") {
+        ClearCommand();
+        if (pause == 0) {
+          PauseWashing();
+        } else {
+          ResumeWashing();
+        }
+      }
     }
 
-    if (command == "D" && IsWashing())
-    {
-      ClearCommand();
-      if (pause == 0)
-      {
-        PauseWashing();
-      }
-      else
-      {
-        ResumeWashing();
-      }
-    }
   }
 
   // Read WINDOW_SENSOR
