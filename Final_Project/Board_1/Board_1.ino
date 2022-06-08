@@ -1,8 +1,5 @@
 #include <LiquidCrystal.h>
 #include <Adafruit_NeoPixel.h>
-#ifdef __AVR__
-#include <avr/power.h>
-#endif
 #include <Servo.h>
 
 #define LCD_R5 13
@@ -11,15 +8,15 @@
 #define LCD_DB5 10
 #define LCD_DB6 9
 #define LCD_DB7 8
-#define PIN 7
-#define NUMPIXELS 8
+#define PIN_LED 7
+#define TOTAL_PIXEL_COUNT 8
 #define SPEAKER 6
 #define SERVOR_PIN 5
 #define WINDOW_SENSOR 4
 #define RESET_PIN 3
 #define SENSOR A0
 
-Adafruit_NeoPixel pixels(NUMPIXELS, PIN, NEO_GRB + NEO_KHZ800);
+Adafruit_NeoPixel pixels(TOTAL_PIXEL_COUNT, PIN_LED, NEO_GRB + NEO_KHZ800);
 Servo myservo;
 
 // ====== Lệnh điều khiển =======
@@ -105,9 +102,6 @@ void setup()
   lcd_1.begin(16, 2);
   lcd_1.print("May Giat");
 
-#if defined(__AVR_ATtiny85__) && (F_CPU == 16000000)
-  clock_prescale_set(clock_div_1);
-#endif
   pixels.begin();
 
   pinMode(SPEAKER, OUTPUT);
@@ -142,7 +136,7 @@ void loop()
   // Start
   if (command == "C")
   {
-    if (status == 0 || status == 7)
+    if (!IsWashing())
     {
       Serial.println("Start washing");
       lcd_1.clear();
@@ -186,7 +180,7 @@ void StartWashing()
   Complete();
 }
 
-void StopWashing()
+void EndWashing()
 {
   status = 8;
   Serial.println("Stop washing");
@@ -343,7 +337,7 @@ void ReadInput() {
     if (IsWashing()) {
       if (command == "A"){
         ClearCommand();
-        StopWashing();
+        EndWashing();
       } else if (command == "D") {
         ClearCommand();
         if (pause == 0) {
@@ -357,15 +351,14 @@ void ReadInput() {
   }
 
   // Read WINDOW_SENSOR
-  if (digitalRead(WINDOW_SENSOR) == LOW)
-  {
-    while (digitalRead(WINDOW_SENSOR) == LOW)
-    {
-      delay(1);
+  if (digitalRead(WINDOW_SENSOR) == LOW) {
+    while (digitalRead(WINDOW_SENSOR) == LOW) {
+      delay(1); // safety feature
     }
     window_open = !window_open;
     Serial.println("Window : " + String(window_open));
   }
+
 }
 
 void WarningWindowIsOpen()
@@ -419,13 +412,13 @@ void PrintCurrentStatus()
 
 void ReadSensor()
 {
-  water_sensor = analogRead(SENSOR);
+  water_sensor = analogRead(SENSOR); // 0 -> 1023
 }
 
 void LedWaterIn(int water_level)
 {
   pixels.clear();
-  for (int i = 0; (i < NUMPIXELS && water_sensor < water_level); i++)
+  for (int i = 0; (i < TOTAL_PIXEL_COUNT && water_sensor < water_level); i++)
   {
     Serial.println("Water: " + String(water_sensor));
     pixels.setPixelColor(i, pixels.Color(0, 150, 0));
@@ -439,7 +432,7 @@ void LedWaterIn(int water_level)
 void LedWaterOut()
 {
   pixels.clear();
-  for (int i = 0; (i < NUMPIXELS && water_sensor > water_level_drain); i++)
+  for (int i = 0; (i < TOTAL_PIXEL_COUNT && water_sensor > water_level_drain); i++)
   {
     Serial.println("Water: " + String(water_sensor));
     pixels.setPixelColor(i, pixels.Color(0, 255, 255));
@@ -454,9 +447,7 @@ void Alarm(int time)
 {
   for (int i = 0; i < time; i++)
   {
-    digitalWrite(SPEAKER, HIGH);
-    delay(100);
-    digitalWrite(SPEAKER, LOW);
+    Beep();
     delay(1000);
   }
 }
