@@ -43,14 +43,14 @@ int level_water = 2;
 
 // ======== Tốc độ giặt =========
 // Tốc độ giặt sẽ được tính theo chế độ giặt và mức nước
-// default : 3
+// default : 9
 // công thức : tốc độ giặt = ((mức nước + 1) * (chế độ giặt + 1) / 4) + 5
 int speed_wash = 9;
 // ==============================
 
 // ======== Tốc độ vắt ==========
-// default : 5
-int speed_spin = 5;
+// default : 2
+int speed_spin = 2;
 // ==============================
 
 // ======== Thời gian giặt =========
@@ -103,7 +103,7 @@ void setup()
 {
   Serial.begin(9600);
   lcd_1.begin(16, 2);
-  lcd_1.print("hello world!");
+  lcd_1.print("May Giat");
 
 #if defined(__AVR_ATtiny85__) && (F_CPU == 16000000)
   clock_prescale_set(clock_div_1);
@@ -156,6 +156,7 @@ void loop()
 void StartWashing()
 {
   // Tính tốc độ giặt
+  // 6 - 8
   speed_wash = ((level_water + 1) * (mode_wash + 1) / 4) + 5;
   // Tính thời gian giặt
   time_wash = (level_water + speed_wash);
@@ -245,7 +246,7 @@ void Squeeze()
   status = 6;
   lcd_1.clear();
   lcd_1.print("Dang vat");
-  for (int i = 0; i < 5; i++)
+  for (int i = 0; i < 15; i++)
   {
     ServoRun(speed_spin);
   }
@@ -329,7 +330,7 @@ void Sleep(int s)
     }
     if (window_open && IsWashing())
     {
-      WaringWindowIsOpen();
+      WarningWindowIsOpen();
     }
   }
 }
@@ -374,7 +375,7 @@ void ReadInput()
   }
 }
 
-void WaringWindowIsOpen()
+void WarningWindowIsOpen()
 {
   lcd_1.clear();
   lcd_1.print("Cua dang mo");
@@ -461,8 +462,9 @@ void Alarm(int time)
   for (int i = 0; i < time; i++)
   {
     digitalWrite(SPEAKER, HIGH);
-    delay(1000);
+    delay(100);
     digitalWrite(SPEAKER, LOW);
+    delay(1000);
   }
 }
 
